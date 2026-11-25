@@ -1,0 +1,96 @@
+export type Screen = "wisp" | "noise" | "garden";
+export type Mood = "sleeping" | "focus" | "loud";
+export type Gesture = "press" | "doublePress" | "swipeUp" | "swipeDown";
+
+export interface WispState {
+  screen: Screen;
+  hidden: boolean;
+  focusStartedAt: number | null; // ms timestamp
+  noiseLevel: number; // 0 to 100, rough estimate
+  loudSince: number | null; // ms timestamp
+  history: number[]; // recent noise samples
+  flowers: number;
+  focusSeconds: number;
+}
+
+export const LOUD_THRESHOLD = 70;
+export const LOUD_SUSTAINED_MS = 5000;
+export const MIN_FOCUS_MS = 5000; // shorter sessions don't plant a flower
+export const HISTORY_LEN = 32;
+
+const SCREENS: Screen[] = ["wisp", "noise", "garden"];
+const GLYPHS = "▁▂▃▄▅▆▇█";
+
+export const initialState: WispState = {
+  screen: "wisp",
+  hidden: false,
+  focusStartedAt: null,
+  noiseLevel: 0,
+  loudSince: null,
+  history: [],
+  flowers: 0,
+  focusSeconds: 0,
+};
+
+export function applyGesture(s: WispState, g: Gesture, now: number): WispState {
+  switch (g) {
+    case "press": {
+      if (s.focusStartedAt === null) return { ...s, focusStartedAt: now };
+      const elapsed = now - s.focusStartedAt;
+      const counted = elapsed >= MIN_FOCUS_MS;
+      return {
+        ...s,
+        focusStartedAt: null,
+        flowers: s.flowers + (counted ? 1 : 0),
+        focusSeconds: s.focusSeconds + (counted ? Math.round(elapsed / 1000) : 0),
+      };
+    }
+    case "doublePress":
+      return { ...s, hidden: !s.hidden };
+    case "swipeDown":
+      return { ...s, screen: SCREENS[(SCREENS.indexOf(s.screen) + 1) % SCREENS.length] };
+    case "swipeUp":
+      return {
+        ...s,
+        screen: SCREENS[(SCREENS.indexOf(s.screen) + SCREENS.length - 1) % SCREENS.length],
+      };
+  }
+}
+
+export function applyNoise(s: WispState, level: number, now: number): WispState {
+  const clamped = Math.max(0, Math.min(100, Math.round(level)));
+  const isLoud = clamped >= LOUD_THRESHOLD;
+  return {
+    ...s,
+    noiseLevel: clamped,
+    loudSince: isLoud ? (s.loudSince ?? now) : null,
+    history: [...s.history, clamped].slice(-HISTORY_LEN),
+  };
+}
+
+export function shouldNudge(s: WispState, now: number): boolean {
+  return s.loudSince !== null && now - s.loudSince >= LOUD_SUSTAINED_MS;
+}
+
+export function getMood(s: WispState, now: number): Mood {
+  if (shouldNudge(s, now)) return "loud";
+  if (s.focusStartedAt !== null) return "focus";
+  return "sleeping";
+}
+
+export function glyphForLevel(level: number): string {
+  const i = Math.min(7, Math.floor((Math.max(0, level) / 100) * 8));
+  return GLYPHS[i];
+}
+
+// A rising ramp of block glyphs, e.g. level 50 -> "▁▂▃▄"
+export function levelBar(level: number, width = 8): string {
+  const filled = Math.round((Math.max(0, Math.min(100, level)) / 100) * width);
+  return GLYPHS.slice(0, Math.min(width, filled));
+}
+
+export function describeLevel(level: number): string {
+  if (level >= LOUD_THRESHOLD) return "Loud";
+  if (level >= 35) return "Moderate";
+  return "Quiet";
+}
