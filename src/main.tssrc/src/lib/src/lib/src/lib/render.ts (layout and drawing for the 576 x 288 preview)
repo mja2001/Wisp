@@ -1,0 +1,133 @@
+import {
+  type WispState,
+  type Screen,
+  getMood,
+  shouldNudge,
+  levelBar,
+  glyphForLevel,
+  describeLevel,
+} from "./wispState";
+import { SPRITES, FLOWER, type Sprite } from "./sprites";
+
+export const W = 576;
+export const H = 288;
+const PX = 8; // 12px art -> 24px sprite (2x) -> shown at 4x = 8 canvas px per art pixel
+
+type TextItem = { kind: "text"; text: string; x: number; y: number; size: number; shade: number };
+type ImageItem = { kind: "image"; rows: Sprite; x: number; y: number; shade: number };
+export type Item = TextItem | ImageItem;
+
+// 16 shades of green, 0 = black, 15 = brightest
+export const shade = (i: number): string => {
+  const g = Math.round((255 * Math.max(0, Math.min(15, i))) / 15);
+  return `rgb(${Math.round(g * 0.3)},${g},${Math.round(g * 0.45)})`;
+};
+
+const mmss = (ms: number): string => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = String(Math.floor(total / 60)).padStart(2, "0");
+  const s = String(total % 60).padStart(2, "0");
+  return `${m}:${s}`;
+};
+
+const navDots = (current: Screen): string =>
+  (["wisp", "noise", "garden"] as Screen[]).map((x) => (x === current ? "●" : "○")).join(" ");
+
+const text = (t: string, x: number, y: number, size: number, shadeIdx: number): TextItem => ({
+  kind: "text",
+  text: t,
+  x,
+  y,
+  size,
+  shade: shadeIdx,
+});
+
+export function buildLayout(s: WispState, now: number): Item[] {
+  if (s.hidden) return [];
+  const items: Item[] = [];
+  const nav = text(navDots(s.screen), 32, 252, 18, 12);
+
+  if (s.screen === "wisp") {
+    const mood = getMood(s, now);
+    const frame = Math.floor(now / 800) % 2;
+    const elapsed = s.focusStartedAt ? now - s.focusStartedAt : 0;
+    const spriteShade =
+      mood === "focus" ? Math.min(15, 9 + Math.floor(elapsed / 20000)) : mood === "loud" ? 15 : 11;
+
+    items.push({ kind: "image", rows: [...SPRITES[mood][frame]], x: 32, y: 40, shade: spriteShade });
+
+    const label = s.focusStartedAt
+      ? `Focus ${mmss(elapsed)}`
+      : mood === "loud"
+        ? "Loud"
+        : "Quiet";
+    const sub =
+      mood === "focus" ? "Lantern lit" : mood === "loud" ? "Covering ears" : "Sleeping";
+
+    items.push(text(label, 160, 48, 28, 15));
+    items.push(text(sub, 160, 88, 16, 9));
+    items.push(text(`Level ${levelBar(s.noiseLevel)} ${s.noiseLevel}`, 160, 128, 20, 13));
+    if (shouldNudge(s, now)) items.push(text("Step away?", 160, 168, 24, 15));
+    items.push(nav);
+  }
+
+  if (s.screen === "noise") {
+    items.push(text("NOISE", 32, 28, 18, 10));
+    items.push(
+      text(s.history.map(glyphForLevel).join("") || "▁", 32, 90, 24, 15)
+    );
+    items.push(
+      text(`Level ${s.noiseLevel}/100 · ${describeLevel(s.noiseLevel)}`, 32, 170, 22, 13)
+    );
+    items.push(nav);
+  }
+
+  if (s.screen === "garden") {
+    items.push(text("GARDEN", 32, 28, 18, 10));
+    const shown = Math.min(4, s.flowers); // image container budget is 4
+    for (let i = 0; i < shown; i++) {
+      items.push({ kind: "image", rows: [...FLOWER], x: 32 + i * 112, y: 60, shade: 15 });
+    }
+    if (s.flowers === 0) {
+      items.push(text("Your first session plants a flower.", 32, 120, 18, 9));
+    }
+    if (s.flowers > 4) items.push(text(`+${s.flowers - 4}`, 484, 96, 22, 13));
+    const mins = Math.floor(s.focusSeconds / 60);
+    items.push(text(`${s.flowers} flowers · ${mins} min`, 32, 180, 22, 13));
+    items.push(nav);
+  }
+
+  return items;
+}
+
+export function countContainers(items: Item[]): { text: number; image: number } {
+  return {
+    text: items.filter((i) => i.kind === "text").length,
+    image: items.filter((i) => i.kind === "image").length,
+  };
+}
+
+export function draw(ctx: CanvasRenderingContext2D, items: Item[]): void {
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = shade(6);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+  ctx.textBaseline = "top";
+
+  for (const item of items) {
+    if (item.kind === "text") {
+      ctx.fillStyle = shade(item.shade);
+      ctx.font = `${item.size}px "Courier New", monospace`;
+      ctx.fillText(item.text, item.x, item.y);
+    } else {
+      ctx.fillStyle = shade(item.shade);
+      item.rows.forEach((row, ry) => {
+        for (let rx = 0; rx < row.length; rx++) {
+          if (row[rx] === "#") ctx.fillRect(item.x + rx * PX, item.y + ry * PX, PX, PX);
+        }
+      });
+    }
+  }
+}
