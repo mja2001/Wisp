@@ -8,8 +8,6 @@ Wisp is a tiny creature that lives in the corner of your vision. It never talks.
 
 **Live demo:** https://wisp-garden-glasses.lovable.app
 
-![Wisp preview](docs/preview.png)
-
 ## The idea
 
 Most apps compete for attention with notifications, feeds, and dashboards. On smart glasses that gets worse, because everything sits in your line of sight. Wisp asks a different question: what if a heads-up display could be calm?
