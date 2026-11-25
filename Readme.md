@@ -108,4 +108,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Team
 
-AYM MJ, developer and designer
+mja2001, developer and designer
