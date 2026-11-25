@@ -1,0 +1,53 @@
+import { useEffect, useState } from "react";
+
+export function useMic(enabled: boolean) {
+  const [level, setLevel] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setLevel(null);
+      return;
+    }
+    setError(null);
+    let stream: MediaStream | undefined;
+    let ctx: AudioContext | undefined;
+    let timer: number | undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        source.connect(analyser);
+        const buf = new Float32Array(analyser.fftSize);
+
+        timer = window.setInterval(() => {
+          analyser.getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (const v of buf) sum += v * v;
+          const rms = Math.sqrt(sum / buf.length);
+          setLevel(Math.min(100, Math.round(rms * 400))); // rough estimate only
+        }, 200);
+      } catch {
+        setError("Microphone unavailable. Use the simulator instead.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      stream?.getTracks().forEach((t) => t.stop());
+      ctx?.close();
+    };
+  }, [enabled]);
+
+  return { level, error };
+}
